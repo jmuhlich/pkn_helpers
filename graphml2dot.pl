@@ -6,10 +6,11 @@ use XML::Twig;
 # magic scaling to make the units come out right
 use constant
 {
-  SIZE_SCALE => 1/72, # probably based on 72 DPI
+  SIZE_SCALE => 1/72, # positions are in points, but sizes aren't?
   FONT_SCALE => 2,    # XXX Promot apparently doesn't export real font
                       # sizes to gxl so the font sizes are bogus
                       # anyway. this is hack to make this file work.
+  EDGE_SCALE => 3,    # line thickness
   LABEL_CUTOFF => 20, # XXX width cutoff below which we hide labels
 };
 
@@ -51,7 +52,7 @@ my $twig = XML::Twig->new
    },
   );
 print "digraph \"g\" {\n";
-print "splines=true\n"; # XXX ?? not working
+print "graph [splines=true]\n";
 $twig->parsefile($ARGV[0]);
 print "}\n";
 
@@ -139,8 +140,8 @@ sub parse_edge
 sub parse_linestyle
 {
   $cur_edge->{color} = normalize_color $_[1]->att('color');
+  $cur_edge->{penwidth} = $_[1]->att('width') * EDGE_SCALE;
   # type? (only see "line" in this sample)
-  # width? (unsupported in graphviz)
 }
 
 
