@@ -31,16 +31,22 @@ my %shape_map =
    roundrectangle => 'box',
   );
 
+# path to skip over the top-level single-node graph, as the nodes we
+# really want are nested in the subgraph.  edges are all at the top
+# level so no path is needed there. y: elements on the top-level graph
+# node do end up getting parsed but are never printed.
+my $np = '/graphml/graph/node/graph';
+
 my $twig = XML::Twig->new
   (
    start_tag_handlers =>
    {
-    'node'          => \&parse_node,
+    "$np/node"      => \&parse_node,
     'edge'          => \&parse_edge,
    },
    twig_handlers =>
    {
-    'node'          => \&print_node,
+    "$np/node"      => \&print_node,
     'edge'          => \&print_edge,
     'y:Geometry'    => \&parse_geometry,
     'y:Fill'        => \&parse_fill,
