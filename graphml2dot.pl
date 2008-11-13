@@ -31,6 +31,12 @@ my %shape_map =
    roundrectangle => 'box',
   );
 
+my %style_map =
+  (
+    line          => 'solid',
+    dashed        => 'dashed',
+  );
+
 # path to skip over the top-level single-node graph, as the nodes we
 # really want are nested in the subgraph.  edges are all at the top
 # level so no path is needed there. y: elements on the top-level graph
@@ -112,6 +118,7 @@ sub parse_nodelabel
   {
     $cur_node->{label} = quote '';
   }
+  $cur_node->{__original_label} = $_[1]->text;
   $cur_node->{fontsize} = $_[1]->att('fontSize') * FONT_SCALE;
   $cur_node->{fontcolor} = normalize_color $_[1]->att('textColor');
   $cur_node->{fontname} = quote $_[1]->att('fontFamily');
@@ -147,7 +154,7 @@ sub parse_linestyle
 {
   $cur_edge->{color} = normalize_color $_[1]->att('color');
   $cur_edge->{penwidth} = $_[1]->att('width') * EDGE_SCALE;
-  # type? (only see "line" in this sample)
+  $cur_edge->{style} = $style_map{$_[1]->att('type')};
 }
 
 
@@ -157,11 +164,11 @@ sub parse_arrows
   my $source = $_[1]->att('source') eq 'standard';
   my $target = $_[1]->att('target') eq 'standard';
   my $dir;
-  if    ( $source and $target) { $dir = 'both'    }
-  elsif ( $source )            { $dir = 'back'    }
-  elsif ( $target )            { $dir = 'forward' }
-  else                         { $dir = 'none'    }
-  $cur_edge->{dir} = $dir;
+  if    ( $source and $target) { $cur_edge->{dir} = 'both'      }
+  elsif ( $source )            { $cur_edge->{dir} = 'back'      }
+  elsif ( $target )            { $cur_edge->{dir} = 'forward'   }
+  else                         { $cur_edge->{dir} = 'forward';
+                                 $cur_edge->{arrowhead} = 'tee' }
 }
 
 
@@ -172,7 +179,7 @@ sub print_node
 {
   print delete $cur_node->{id};
   print ' [';
-  print join(', ', map("$_=$cur_node->{$_}", keys %$cur_node));
+  print join(', ', map("$_=$cur_node->{$_}", grep {!/^__/} keys %$cur_node));
   print "]\n";
 }
 
@@ -181,7 +188,7 @@ sub print_edge
 {
   print join(' -> ', delete @$cur_edge{qw(source target)});
   print ' [';
-  print join(', ', map("$_=$cur_edge->{$_}", keys %$cur_edge));
+  print join(', ', map("$_=$cur_edge->{$_}", grep {!/^__/} keys %$cur_edge));
   print "]\n";
 }
 
