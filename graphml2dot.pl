@@ -22,6 +22,9 @@ my @nodes;
 my @edges;
 my $cur_node;
 my $cur_edge;
+my %oldid_to_newid;
+my %edge_weights;
+
 
 my %shape_map =
   (
@@ -74,7 +77,7 @@ print "}\n";
 
 sub parse_node
 {
-  $cur_node = { id => normalize_id($_[1]->att('id')) };
+  $cur_node = { __oldid => $_[1]->att('id') };
   push @nodes, $cur_node;
 }
 
@@ -118,10 +121,11 @@ sub parse_nodelabel
   {
     $cur_node->{label} = quote '';
   }
-  $cur_node->{__original_label} = $_[1]->text;
+  $cur_node->{id} = normalize_id $_[1]->text;
   $cur_node->{fontsize} = $_[1]->att('fontSize') * FONT_SCALE;
   $cur_node->{fontcolor} = normalize_color $_[1]->att('textColor');
   $cur_node->{fontname} = quote $_[1]->att('fontFamily');
+  $oldid_to_newid{$cur_node->{__oldid}} = $cur_node->{id};
   # height/width appear to be the same as Geometry[height,width]
   # x has no obvious significance
   # attributes with only one value in this sample file:
@@ -144,8 +148,8 @@ sub parse_shape
 
 sub parse_edge
 {
-  my $source = normalize_id $_[1]->att('source');
-  my $target = normalize_id $_[1]->att('target');
+  my $source = $oldid_to_newid{$_[1]->att('source')};
+  my $target = $oldid_to_newid{normalize_id $_[1]->att('target')};
   $cur_edge = { source => $source, target => $target };
 }
 
@@ -198,8 +202,8 @@ sub print_edge
 
 sub normalize_id
 {
-  my $id = pop;
-  $id =~ tr/-://d;
+  my ($id) = @_;
+  $id =~ tr/\W/_/d;
   return $id;
 }
 
