@@ -2,6 +2,7 @@
 
 use strict;
 use XML::Twig;
+use Getopt::Long;
 
 # magic scaling to make the units come out right
 use constant
@@ -10,8 +11,10 @@ use constant
   FONT_SCALE => 2,    # XXX Promot apparently doesn't export real font
                       # sizes to gxl so the font sizes are bogus
                       # anyway. this is hack to make this file work.
-  EDGE_SCALE => 3,    # line thickness
+  EDGE_SCALE => 1,    # line thickness
   LABEL_CUTOFF => 20, # XXX width cutoff below which we hide labels
+  GRAY_MIN   => 0xCC, # for scaling of edge intensity
+  GRAY_MAX   => 0x00,
 };
 
 sub normalize_id;
@@ -39,6 +42,16 @@ my %style_map =
     line          => 'solid',
     dashed        => 'dashed',
   );
+
+
+my $edge_file;
+my $result = GetOptions("edge-file=s" => \$edge_file);
+if (defined $edge_file)
+{
+  parse_edgefile($edge_file) or die("Couldn't open edge file '$edge_file'\n");
+}
+
+
 
 # path to skip over the top-level single-node graph, as the nodes we
 # really want are nested in the subgraph.  edges are all at the top
@@ -159,6 +172,15 @@ sub parse_linestyle
   $cur_edge->{color} = normalize_color $_[1]->att('color');
   $cur_edge->{penwidth} = $_[1]->att('width') * EDGE_SCALE;
   $cur_edge->{style} = $style_map{$_[1]->att('type')};
+
+  my $weight = $edge_weights{$cur_edge->{source}}{$cur_edge->{target}};
+  if (defined $weight)
+  {
+    my $gray = GRAY_MIN + (GRAY_MAX - GRAY_MIN) * $weight;
+    my $color = quote( '#' . sprintf('%02x', $gray) x 3 );
+    $cur_edge->{color} = $color;
+    $cur_edge->{penwidth} = ($weight + .5) * 3;
+  }
 }
 
 
@@ -213,7 +235,27 @@ sub normalize_color
   return quote( '#' . '0' x (7 - length($_[0])) . substr($_[0], 1) );
 }
 
+
 sub quote
 {
   return qq{"$_[0]"};
+}
+
+
+#==========
+
+
+sub parse_edgefile
+{
+  my ($edgefile) = @_;
+
+  open(EDGEFILE, '<', $edgefile) or return undef;
+
+  while (my $line = <EDGEFILE>)
+  {
+    my ($target, $source, $weight) = split(' ', $line);
+    $edge_weights{$source}{$target} = $weight;
+  }
+
+  close(EDGEFILE);
 }
