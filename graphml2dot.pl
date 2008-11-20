@@ -2,6 +2,7 @@
 
 use strict;
 use XML::Twig;
+use Color::Calc(OutputFormat => 'html', Prefix => 'color');
 use Getopt::Long;
 
 # magic scaling to make the units come out right
@@ -11,15 +12,15 @@ use constant
   FONT_SCALE => 2,    # XXX Promot apparently doesn't export real font
                       # sizes to gxl so the font sizes are bogus
                       # anyway. this is hack to make this file work.
-  EDGE_SCALE => 1,    # line thickness
+  EDGE_SCALE => 4,    # line thickness
   LABEL_CUTOFF => 20, # XXX width cutoff below which we hide labels
-  GRAY_MIN   => 0xCC, # for scaling of edge intensity
-  GRAY_MAX   => 0x00,
+  MAX_FADE   => 0.8,  # fade amount (out of 1) for 0-weight edges
 };
 
 sub normalize_id;
 sub normalize_color;
 sub quote;
+sub quote_color;
 
 my @nodes;
 my @edges;
@@ -44,12 +45,15 @@ my %style_map =
   );
 
 
-my $edge_file;
-my $result = GetOptions("edge-file=s" => \$edge_file);
-if (defined $edge_file)
+my @edge_files;
+my $result = GetOptions("edge-file=s" => \@edge_files);
+if (@edge_files)
 {
-  parse_edgefile($edge_file) or die("Couldn't open edge file '$edge_file'\n");
+  parse_edgefile($_) or die("Couldn't open edge file '$_'\n") foreach @edge_files;
 }
+
+
+my @edge_colors = @edge_files == 1 ? qw(black) : qw(red blue green);
 
 
 
@@ -84,7 +88,8 @@ print "graph [splines=true]\n";
 $twig->parsefile($ARGV[0]);
 print "}\n";
 
-
+$DB::single=1;
+1;
 #==========
 
 
@@ -110,7 +115,7 @@ sub parse_geometry
 
 sub parse_fill
 {
-  $cur_node->{fillcolor} = normalize_color $_[1]->att('color');
+  $cur_node->{fillcolor} = quote_color $_[1]->att('color');
   $cur_node->{style}     = 'filled';
   # transparency? (unsupported in graphviz)
 }
@@ -118,7 +123,7 @@ sub parse_fill
 
 sub parse_borderstyle
 {
-  $cur_node->{color} = normalize_color $_[1]->att('color');
+  $cur_node->{color} = quote_color $_[1]->att('color');
   # type? (only see "line" in this one sample file)
   # width? (unsupported in graphviz)
 }
@@ -136,7 +141,7 @@ sub parse_nodelabel
   }
   $cur_node->{id} = normalize_id $_[1]->text;
   $cur_node->{fontsize} = $_[1]->att('fontSize') * FONT_SCALE;
-  $cur_node->{fontcolor} = normalize_color $_[1]->att('textColor');
+  $cur_node->{fontcolor} = quote_color $_[1]->att('textColor');
   $cur_node->{fontname} = quote $_[1]->att('fontFamily');
   $oldid_to_newid{$cur_node->{__oldid}} = $cur_node->{id};
   # height/width appear to be the same as Geometry[height,width]
@@ -169,17 +174,27 @@ sub parse_edge
 
 sub parse_linestyle
 {
-  $cur_edge->{color} = normalize_color $_[1]->att('color');
+  my $original_color = color_dark(normalize_color $_[1]->att('color'), 1);
+  $cur_edge->{color} = quote $original_color;
   $cur_edge->{penwidth} = $_[1]->att('width') * EDGE_SCALE;
   $cur_edge->{style} = $style_map{$_[1]->att('type')};
 
-  my $weight = $edge_weights{$cur_edge->{source}}{$cur_edge->{target}};
-  if (defined $weight)
+  my $weights = $edge_weights{$cur_edge->{source}}{$cur_edge->{target}};
+  if ($weights)
   {
-    my $gray = GRAY_MIN + (GRAY_MAX - GRAY_MIN) * $weight;
-    my $color = quote( '#' . sprintf('%02x', $gray) x 3 );
-    $cur_edge->{color} = $color;
-    $cur_edge->{penwidth} = ($weight + .5) * 3;
+    my (@colors, @widths);
+    foreach my $i (0..$#edge_files)
+    {
+      my $weight = $weights->{$edge_files[$i]};
+      push @colors, color_light($edge_colors[$i], (1 - $weight) * MAX_FADE);
+      push @widths, ($weight + .5) * 3;
+    }
+    $cur_edge->{color} = quote join(':#ffffff:', @colors);
+    #my $avg_width = 0;
+    #$avg_width += $_ / @widths * EDGE_SCALE foreach @widths;
+    #$cur_edge->{penwidth} = $avg_width;
+    $cur_edge->{penwidth} = quote join(':5:', @widths);
+    #printf("%7s -> %7s   %4.2f => %s,%4.2f\n", $cur_edge->{source}, $cur_edge->{target}, $weights->{$edge_files[$_]}, $colors[$_], $widths[$_]) for 0..$#colors;
   }
 }
 
@@ -232,13 +247,19 @@ sub normalize_id
 
 sub normalize_color
 {
-  return quote( '#' . '0' x (7 - length($_[0])) . substr($_[0], 1) );
+  return '#' . '0' x (7 - length($_[0])) . substr($_[0], 1);
 }
 
 
 sub quote
 {
   return qq{"$_[0]"};
+}
+
+
+sub quote_color
+{
+  return quote normalize_color $_[0];
 }
 
 
@@ -254,7 +275,7 @@ sub parse_edgefile
   while (my $line = <EDGEFILE>)
   {
     my ($target, $source, $weight) = split(' ', $line);
-    $edge_weights{$source}{$target} = $weight;
+    $edge_weights{$source}{$target}{$edgefile} = $weight;
   }
 
   close(EDGEFILE);
