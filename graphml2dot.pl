@@ -178,24 +178,6 @@ sub parse_linestyle
   $cur_edge->{color} = quote $original_color;
   $cur_edge->{penwidth} = $_[1]->att('width') * EDGE_SCALE;
   $cur_edge->{style} = $style_map{$_[1]->att('type')};
-
-  my $weights = $edge_weights{$cur_edge->{source}}{$cur_edge->{target}};
-  if ($weights)
-  {
-    my (@colors, @widths);
-    foreach my $i (0..$#edge_files)
-    {
-      my $weight = $weights->{$edge_files[$i]};
-      push @colors, color_light($edge_colors[$i], (1 - $weight) * MAX_FADE);
-      push @widths, ($weight + .5) * 3;
-    }
-    $cur_edge->{color} = quote join(':#ffffff:', @colors);
-    #my $avg_width = 0;
-    #$avg_width += $_ / @widths * EDGE_SCALE foreach @widths;
-    #$cur_edge->{penwidth} = $avg_width;
-    $cur_edge->{penwidth} = quote join(':5:', @widths);
-    #printf("%7s -> %7s   %4.2f => %s,%4.2f\n", $cur_edge->{source}, $cur_edge->{target}, $weights->{$edge_files[$_]}, $colors[$_], $widths[$_]) for 0..$#colors;
-  }
 }
 
 
@@ -227,10 +209,32 @@ sub print_node
 
 sub print_edge
 {
-  print join(' -> ', delete @$cur_edge{qw(source target)});
-  print ' [';
-  print join(', ', map("$_=$cur_edge->{$_}", grep {!/^__/} keys %$cur_edge));
-  print "]\n";
+  my @edge_list = ($cur_edge);
+
+  my $weights = $edge_weights{$cur_edge->{source}}{$cur_edge->{target}};
+  if ($weights)
+  {
+    my (@colors, @widths);
+    @edge_list = ();
+    foreach my $i (0..$#edge_files)
+    {
+      my $weight = $weights->{$edge_files[$i]};
+      my $new_edge = {%$cur_edge};
+      $new_edge->{color} = quote color_light($edge_colors[$i], (1 - $weight) * MAX_FADE);
+      $new_edge->{penwidth} = ($weight) * 7;
+      $new_edge->{weight} = $weight * 2;
+      push @edge_list, $new_edge;
+    }
+    #printf("%7s -> %7s   %4.2f => %s,%4.2f\n", $cur_edge->{source}, $cur_edge->{target}, $weights->{$edge_files[$_]}, $colors[$_], $widths[$_]) for 0..$#colors;
+  }
+
+  foreach my $edge (@edge_list)
+  {
+    print join(' -> ', delete @$edge{qw(source target)});
+    print ' [';
+    print join(', ', map("$_=$edge->{$_}", grep {!/^__/} keys %$edge));
+    print "]\n";
+  }
 }
 
 
