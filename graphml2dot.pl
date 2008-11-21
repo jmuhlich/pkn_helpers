@@ -20,7 +20,6 @@ use constant
 sub normalize_id;
 sub normalize_color;
 sub quote;
-sub quote_color;
 
 my @nodes;
 my @edges;
@@ -46,15 +45,20 @@ my %style_map =
 
 
 my @edge_files;
-my $result = GetOptions("edge-file=s" => \@edge_files);
+my @edge_colors;
+my $result = GetOptions(
+  "edge-file=s"  => \@edge_files,
+  "edge-color=s" => \@edge_colors,
+);
+if (@edge_files != @edge_colors)
+{
+  die("Number of edge-files (", scalar @edge_files,
+      ") and edge-colors (", scalar @edge_colors, ") must be equal\n");
+}
 if (@edge_files)
 {
   parse_edgefile($_) or die("Couldn't open edge file '$_'\n") foreach @edge_files;
 }
-
-
-my @edge_colors = @edge_files == 1 ? qw(black) : qw(red blue green);
-
 
 
 # path to skip over the top-level single-node graph, as the nodes we
@@ -115,7 +119,7 @@ sub parse_geometry
 
 sub parse_fill
 {
-  $cur_node->{fillcolor} = quote_color $_[1]->att('color');
+  $cur_node->{fillcolor} = normalize_color $_[1]->att('color');
   $cur_node->{style}     = 'filled';
   # transparency? (unsupported in graphviz)
 }
@@ -123,7 +127,7 @@ sub parse_fill
 
 sub parse_borderstyle
 {
-  $cur_node->{color} = quote_color $_[1]->att('color');
+  $cur_node->{color} = normalize_color $_[1]->att('color');
   # type? (only see "line" in this one sample file)
   # width? (unsupported in graphviz)
 }
@@ -141,7 +145,7 @@ sub parse_nodelabel
   }
   $cur_node->{id} = normalize_id $_[1]->text;
   $cur_node->{fontsize} = $_[1]->att('fontSize') * FONT_SCALE;
-  $cur_node->{fontcolor} = quote_color $_[1]->att('textColor');
+  $cur_node->{fontcolor} = normalize_color $_[1]->att('textColor');
   $cur_node->{fontname} = quote $_[1]->att('fontFamily');
   $oldid_to_newid{$cur_node->{__oldid}} = $cur_node->{id};
   # height/width appear to be the same as Geometry[height,width]
@@ -174,8 +178,7 @@ sub parse_edge
 
 sub parse_linestyle
 {
-  my $original_color = color_dark(normalize_color $_[1]->att('color'), 1);
-  $cur_edge->{color} = quote $original_color;
+  $cur_edge->{color} = normalize_color $_[1]->att('color');
   $cur_edge->{penwidth} = $_[1]->att('width') * EDGE_SCALE;
   $cur_edge->{style} = $style_map{$_[1]->att('type')};
 }
@@ -216,16 +219,21 @@ sub print_edge
   {
     my (@colors, @widths);
     @edge_list = ();
+    my $all_identical = 1;
     foreach my $i (0..$#edge_files)
     {
       my $weight = $weights->{$edge_files[$i]};
       my $new_edge = {%$cur_edge};
       $new_edge->{color} = quote color_light($edge_colors[$i], (1 - $weight) * MAX_FADE);
-      $new_edge->{penwidth} = ($weight) * 7;
-      $new_edge->{weight} = $weight * 2;
+      $new_edge->{penwidth} = ($weight) * EDGE_SCALE;
       push @edge_list, $new_edge;
+      $all_identical = undef if $weight != $weights->{$edge_files[0]};
     }
-    #printf("%7s -> %7s   %4.2f => %s,%4.2f\n", $cur_edge->{source}, $cur_edge->{target}, $weights->{$edge_files[$_]}, $colors[$_], $widths[$_]) for 0..$#colors;
+    if ($all_identical)
+    {
+      splice(@edge_list, 1);
+      $edge_list[0]->{color} = quote color_light('black', (1 - $weights->{$edge_files[0]}) * MAX_FADE);
+    }
   }
 
   foreach my $edge (@edge_list)
@@ -251,19 +259,13 @@ sub normalize_id
 
 sub normalize_color
 {
-  return '#' . '0' x (7 - length($_[0])) . substr($_[0], 1);
+  return quote( '#' . '0' x (7 - length($_[0])) . substr($_[0], 1) );
 }
 
 
 sub quote
 {
   return qq{"$_[0]"};
-}
-
-
-sub quote_color
-{
-  return quote normalize_color $_[0];
 }
 
 
