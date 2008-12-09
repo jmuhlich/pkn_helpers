@@ -225,7 +225,7 @@ sub print_edge
       my $weight = $weights->{$edge_files[$i]};
       my $new_edge = {%$cur_edge};
       $new_edge->{color} = quote color_light($edge_colors[$i], (1 - $weight) * MAX_FADE);
-      $new_edge->{penwidth} = ($weight) * EDGE_SCALE;
+      $new_edge->{penwidth} = ($weight + 0.4) * EDGE_SCALE;
       push @edge_list, $new_edge;
       $all_identical = undef if $weight != $weights->{$edge_files[0]};
     }
