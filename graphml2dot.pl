@@ -2,7 +2,7 @@
 
 use strict;
 use XML::Twig;
-use Color::Calc(OutputFormat => 'html', Prefix => 'color');
+use Color::Calc(OutputFormat => 'hex', Prefix => 'color');
 use Getopt::Long;
 
 # magic scaling to make the units come out right
@@ -22,11 +22,11 @@ sub normalize_color;
 sub quote;
 
 my @nodes;
-my @edges;
 my $cur_node;
 my $cur_edge;
 my %oldid_to_newid;
 my %edge_weights;
+my $num_edges = 0;
 
 
 my %shape_map =
@@ -35,6 +35,7 @@ my %shape_map =
    ellipse        => 'ellipse',
    hexagon        => 'hexagon',
    roundrectangle => 'box',
+   RECTANGLE      => 'box',
   );
 
 my %style_map =
@@ -44,40 +45,48 @@ my %style_map =
   );
 
 
-my @edge_files;
-my @edge_colors;
+my (@edge_files, @edge_colors, $swap_edge_columns);
 my $result = GetOptions(
   "edge-file=s"  => \@edge_files,
   "edge-color=s" => \@edge_colors,
+  "swap-edge-columns" => \$swap_edge_columns,
 );
-if (@edge_files != @edge_colors)
-{
-  die("Number of edge-files (", scalar @edge_files,
-      ") and edge-colors (", scalar @edge_colors, ") must be equal\n");
-}
 if (@edge_files)
 {
   parse_edgefile($_) or die("Couldn't open edge file '$_'\n") foreach @edge_files;
 }
+if ($num_edges != @edge_colors)
+{
+  die("Number of edges read ($num_edges) ",
+      "and edge-colors (", scalar @edge_colors, ") must be equal\n");
+}
 
 
+# for Promot/CNO GML graphs:
 # path to skip over the top-level single-node graph, as the nodes we
 # really want are nested in the subgraph.  edges are all at the top
 # level so no path is needed there. y: elements on the top-level graph
 # node do end up getting parsed but are never printed.
-my $np = '/graphml/graph/node/graph';
+my $gml_np = '/graphml/graph/node/graph/node';
+
+# for Cytoscape XGMML graphs:
+# Same as above but there are no subgraphs and the root node is different.
+my $xgmml_np = '/graph/node';
 
 my $twig = XML::Twig->new
   (
    start_tag_handlers =>
    {
-    "$np/node"      => \&parse_node,
+    $gml_np         => \&parse_gml_node,
+    $xgmml_np       => \&parse_xgmml_node,
     'edge'          => \&parse_edge,
    },
    twig_handlers =>
    {
-    "$np/node"      => \&print_node,
+    $gml_np         => \&print_node,
+    $xgmml_np       => \&print_node,
     'edge'          => \&print_edge,
+    # gml-specific
     'y:Geometry'    => \&parse_geometry,
     'y:Fill'        => \&parse_fill,
     'y:BorderStyle' => \&parse_borderstyle,
@@ -85,6 +94,9 @@ my $twig = XML::Twig->new
     'y:Shape'       => \&parse_shape,
     'y:LineStyle'   => \&parse_linestyle,
     'y:Arrows'      => \&parse_arrows,
+    # gxmml-specific
+    'node/graphics' => \&parse_xgmml_node_graphics,
+    'edge/graphics' => \&parse_xgmml_edge_graphics,
    },
   );
 print "digraph \"g\" {\n";
@@ -97,10 +109,17 @@ $DB::single=1;
 #==========
 
 
-sub parse_node
+sub parse_gml_node
 {
   $cur_node = { __oldid => $_[1]->att('id') };
   push @nodes, $cur_node;
+}
+
+
+sub parse_xgmml_node
+{
+  parse_gml_node(@_);
+  $cur_node->{id} = normalize_id($_[1]->att('label'));
 }
 
 
@@ -147,7 +166,6 @@ sub parse_nodelabel
   $cur_node->{fontsize} = $_[1]->att('fontSize') * FONT_SCALE;
   $cur_node->{fontcolor} = normalize_color $_[1]->att('textColor');
   $cur_node->{fontname} = quote $_[1]->att('fontFamily');
-  $oldid_to_newid{$cur_node->{__oldid}} = $cur_node->{id};
   # height/width appear to be the same as Geometry[height,width]
   # x has no obvious significance
   # attributes with only one value in this sample file:
@@ -162,6 +180,28 @@ sub parse_shape
   my $type = $_[1]->att('type');
   $cur_node->{shape} = $shape_map{$type};
   defined $cur_node->{shape} or die "No mapping for shape type '$type' (edit \%shape_map)";
+}
+
+
+# gxmml
+sub parse_xgmml_node_graphics
+{
+  parse_shape(@_);
+  $cur_node->{width} = $_[1]->att('w') * SIZE_SCALE * 0.5;
+  $cur_node->{height} = $_[1]->att('h') * SIZE_SCALE * 0.5;
+  $cur_node->{fixedsize} = 'true';
+  my $x = $_[1]->att('x');
+  my $y = -( $_[1]->att('y') );  # Y-axis is flipped
+  $cur_node->{pos} = quote "$x,$y";
+  $cur_node->{fillcolor} = normalize_color $_[1]->att('fill');
+  $cur_node->{color} = normalize_color $_[1]->att('outline');
+  $cur_node->{style} = 'filled';
+  my ($fontname, $fontunknown, $fontsize) = split(/-/, $_[1]->att('cy:nodeLabelFont'));
+  $cur_node->{fontsize} = $fontsize;
+  $cur_node->{fontname} = quote $fontname;
+  # TODO: $cur_node->{fontcolor} = ???
+
+  # TODO: cy:borderLineType
 }
 
 
@@ -198,11 +238,18 @@ sub parse_arrows
 }
 
 
+sub parse_xgmml_edge_graphics
+{
+  # FIXME implement
+}
+
+
 #==========
 
 
 sub print_node
 {
+  $oldid_to_newid{$cur_node->{__oldid}} = $cur_node->{id};
   print delete $cur_node->{id};
   print ' [';
   print join(', ', map("$_=$cur_node->{$_}", grep {!/^__/} keys %$cur_node));
@@ -217,25 +264,31 @@ sub print_edge
   my $weights = $edge_weights{$cur_edge->{source}}{$cur_edge->{target}};
   if ($weights)
   {
-    my (@colors, @widths);
+    $DB::single = 1 if $cur_edge->{source} eq 'PI3K' and $cur_edge->{target} eq 'MTORC2';
     @edge_list = ();
     my $all_identical = 1;
-    foreach my $i (0..$#edge_files)
+    my $i = 0;
+    foreach my $weight (@$weights)
     {
-      my $weight = $weights->{$edge_files[$i]};
+      next unless defined $weight;
       my $new_edge = {%$cur_edge};
-      $new_edge->{color} = quote color_light($edge_colors[$i], (1 - $weight) * MAX_FADE);
+      $new_edge->{color} = normalize_color color_light($edge_colors[$i], (1 - $weight) * MAX_FADE);
       $new_edge->{penwidth} = ($weight + 0.4) * EDGE_SCALE;
       push @edge_list, $new_edge;
-      $all_identical = undef if $weight != $weights->{$edge_files[0]};
+      $all_identical = undef if $weight != $weights->[0];
     }
-    if ($all_identical)
+    continue
+    {
+      $i++;
+    }
+    if ($num_edges > 1 and $all_identical)
     {
       splice(@edge_list, 1);
-      $edge_list[0]->{color} = quote color_light('black', (1 - $weights->{$edge_files[0]}) * MAX_FADE);
+      $edge_list[0]->{color} = normalize_color color_light('black', (1 - $weights->[0]) * MAX_FADE);
     }
   }
 
+  unshift(@edge_list, pop(@edge_list));
   foreach my $edge (@edge_list)
   {
     print join(' -> ', delete @$edge{qw(source target)});
@@ -259,7 +312,8 @@ sub normalize_id
 
 sub normalize_color
 {
-  return quote( '#' . '0' x (7 - length($_[0])) . substr($_[0], 1) );
+  my ($color) = $_[0] =~ /([a-f0-9]+)/i;
+  return quote( '#' . '0' x (6 - length($color)) . $color );
 }
 
 
@@ -278,11 +332,20 @@ sub parse_edgefile
 
   open(EDGEFILE, '<', $edgefile) or return undef;
 
+  # parse header to skip it and also determine number of weight columns
+  my ($target, $source, @weights) = split(' ', <EDGEFILE>);
+  my $num_weights = @weights;
   while (my $line = <EDGEFILE>)
   {
-    my ($target, $source, $weight) = split(' ', $line);
-    $edge_weights{$source}{$target}{$edgefile} = $weight;
+    ($target, $source, @weights) = map { /^"([^"]+)"$/ ? $1 : $_ } split(' ', $line);
+    ($source, $target) = ($target, $source) if $swap_edge_columns;
+    @weights = map { sprintf('%.1f', $_) } @weights;
+
+    $edge_weights{$source}{$target}[$num_edges + $num_weights - 1] = undef;  # pre-extend array
+    $DB::single = 1 if $source eq 'mkk7' and $target='jnk12';
+    splice(@{$edge_weights{$source}{$target}}, $num_edges, $num_weights, @weights);
   }
+  $num_edges += $num_weights;
 
   close(EDGEFILE);
 }
