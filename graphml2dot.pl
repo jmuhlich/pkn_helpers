@@ -339,10 +339,8 @@ sub parse_edgefile
   {
     ($target, $source, @weights) = map { /^"([^"]+)"$/ ? $1 : $_ } split(' ', $line);
     ($source, $target) = ($target, $source) if $swap_edge_columns;
-    @weights = map { sprintf('%.1f', $_) } @weights;
+    print STDERR "$source\t$target\t", join("\t",@weights), "\n";
 
-    $edge_weights{$source}{$target}[$num_edges + $num_weights - 1] = undef;  # pre-extend array
-    $DB::single = 1 if $source eq 'mkk7' and $target='jnk12';
     splice(@{$edge_weights{$source}{$target}}, $num_edges, $num_weights, @weights);
   }
   $num_edges += $num_weights;
