@@ -36,12 +36,31 @@ my %shape_map =
    hexagon        => 'hexagon',
    roundrectangle => 'box',
    RECTANGLE      => 'box',
+   ELLIPSE        => 'ellipse',
+   HEXAGON        => 'hexagon',
+   DIAMOND        => 'diamond',
+   RHOMBUS        => 'parallelogram',
+   OCTAGON        => 'octagon',
   );
 
 my %style_map =
   (
     line          => 'solid',
     dashed        => 'dashed',
+  );
+
+my %y_arrow_type_map =
+  (
+    'none'        => 'none',
+    'standard'    => 'normal',
+    't_shape'     => 'tee',
+  );
+
+my %cy_arrow_type_map =
+  (
+    0  => 'none',
+    3  => 'normal',
+    15 => 'tee',
   );
 
 
@@ -226,21 +245,24 @@ sub parse_linestyle
 
 sub parse_arrows
 {
-  # XXX are any values other than 'none' and 'standard' used?
-  my $source = $_[1]->att('source') eq 'standard';
-  my $target = $_[1]->att('target') eq 'standard';
-  my $dir;
-  if    ( $source and $target) { $cur_edge->{dir} = 'both'      }
-  elsif ( $source )            { $cur_edge->{dir} = 'back'      }
-  elsif ( $target )            { $cur_edge->{dir} = 'forward'   }
-  else                         { $cur_edge->{dir} = 'forward';
-                                 $cur_edge->{arrowhead} = 'tee' }
+  my $head_type = $_[1]->att('target');
+  my $tail_type = $_[1]->att('source');
+  $cur_edge->{arrowhead} = $y_arrow_type_map{$head_type};
+  $cur_edge->{arrowtail} = $y_arrow_type_map{$tail_type};
+  defined $cur_edge->{arrowhead} or die("No mapping for edge type '$head_type'\n");
+  defined $cur_edge->{arrowtail} or die("No mapping for edge type '$tail_type'\n"); 
 }
 
 
 sub parse_xgmml_edge_graphics
 {
-  # FIXME implement
+  $cur_edge->{color} = normalize_color $_[1]->att('fill');
+  my $head_type = $_[1]->att('cy:targetArrow');
+  my $tail_type = $_[1]->att('cy:sourceArrow');
+  $cur_edge->{arrowhead} = $cy_arrow_type_map{$head_type};
+  $cur_edge->{arrowtail} = $cy_arrow_type_map{$tail_type};
+  defined $cur_edge->{arrowhead} or die("No mapping for edge type '$head_type'\n");
+  defined $cur_edge->{arrowtail} or die("No mapping for edge type '$tail_type'\n"); 
 }
 
 
