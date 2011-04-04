@@ -286,7 +286,6 @@ sub print_edge
   my $weights = $edge_weights{$cur_edge->{source}}{$cur_edge->{target}};
   if ($weights)
   {
-    $DB::single = 1 if $cur_edge->{source} eq 'PI3K' and $cur_edge->{target} eq 'MTORC2';
     @edge_list = ();
     my $all_identical = 1;
     my $i = 0;
@@ -355,13 +354,28 @@ sub parse_edgefile
   open(EDGEFILE, '<', $edgefile) or return undef;
 
   # parse header to skip it and also determine number of weight columns
-  my ($target, $source, @weights) = split(' ', <EDGEFILE>);
-  my $num_weights = @weights;
+  my $header = <EDGEFILE>;
+  my $re_comma = qr/,/;
+  my $re_whitespace = qr/(?<=\S)\s+(?=\S)/;
+  # =()= is an idiom to get counts from lists in scalar context, instead of
+  # their last element -- see http://www.perlmonks.org/?node_id=527973
+  my $num_commas = () = $header =~ /$re_comma/g;
+  my $num_whitespaces = () = $header =~ /$re_whitespace/g;
+  my ($delimiter, $num_weights);
+  if ($num_commas >= 2)         { $delimiter = $re_comma; $num_weights = $num_commas - 1; }
+  elsif ($num_whitespaces >= 2) { $delimiter = $re_whitespace; $num_weights = $num_whitespaces - 1;}
+  else
+  {
+    die("$edgefile does not look like a delimited (commas or whitespace) file ",
+        "or doesn't have at least three columns (target, source, weight)\n");
+  }
+
   while (my $line = <EDGEFILE>)
   {
-    ($target, $source, @weights) = map { /^"([^"]+)"$/ ? $1 : $_ } split(' ', $line);
+    $line =~ s/(^\s+|\s+$)//g;  # strip leading/trailing whitespace
+    my ($target, $source, @weights) = map { /^"([^"]+)"$/ ? $1 : $_ } split($delimiter, $line);
     ($source, $target) = ($target, $source) if $swap_edge_columns;
-    print STDERR "$source\t$target\t", join("\t",@weights), "\n";
+    print STDERR "$source\t$target\t:\t", join("\t",@weights), "\n";
 
     splice(@{$edge_weights{$source}{$target}}, $num_edges, $num_weights, @weights);
   }
