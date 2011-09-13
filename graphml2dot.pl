@@ -41,6 +41,7 @@ my %shape_map =
    DIAMOND        => 'diamond',
    RHOMBUS        => 'parallelogram',
    OCTAGON        => 'octagon',
+   ROUNDED_RECTANGLE => 'Mrecord',
   );
 
 my %style_map =
@@ -56,10 +57,15 @@ my %y_arrow_type_map =
     't_shape'     => 'tee',
   );
 
+# I think these come from the constants in giny.view.EdgeView, namely the EDGE_COLOR_* ones.
+# See http://csbi.sourceforge.net/API/constant-values.html#giny.view.EdgeView.EDGE_COLOR_ARROW
 my %cy_arrow_type_map =
   (
     0  => 'none',
     3  => 'normal',
+    6  => 'vee',
+    9  => 'diamond',
+    12 => 'dot',
     15 => 'tee',
   );
 
@@ -206,8 +212,8 @@ sub parse_shape
 sub parse_xgmml_node_graphics
 {
   parse_shape(@_);
-  $cur_node->{width} = $_[1]->att('w') * SIZE_SCALE * 0.5;
-  $cur_node->{height} = $_[1]->att('h') * SIZE_SCALE * 0.5;
+  $cur_node->{width} = $_[1]->att('w') * SIZE_SCALE;
+  $cur_node->{height} = $_[1]->att('h') * SIZE_SCALE;
   $cur_node->{fixedsize} = 'true';
   my $x = $_[1]->att('x');
   my $y = -( $_[1]->att('y') );  # Y-axis is flipped
@@ -215,6 +221,7 @@ sub parse_xgmml_node_graphics
   $cur_node->{fillcolor} = normalize_color $_[1]->att('fill');
   $cur_node->{color} = normalize_color $_[1]->att('outline');
   $cur_node->{style} = 'filled';
+  $cur_node->{penwidth} = $_[1]->att('width');
   my ($fontname, $fontunknown, $fontsize) = split(/-/, $_[1]->att('cy:nodeLabelFont'));
   $cur_node->{fontsize} = $fontsize;
   $cur_node->{fontname} = quote $fontname;
